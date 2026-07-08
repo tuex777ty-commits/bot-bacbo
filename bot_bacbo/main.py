@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bac Bo - Bot com Navegação Direta e Estabilidade de WebSocket (Railway)
+Bac Bo - Bot com Ativação Física de Iframe e Estabilidade de WebSocket (Railway)
 """
 
 import asyncio
@@ -24,11 +24,11 @@ URL_MESA_DIRETA = "https://www.5gbet.com/home/subgame?gameCategoryId=4&platformI
 
 DOMINIOS_IRRELEVANTES = ["webpush", "engagelab", "push", "analytics", "doubleclick", "sentry", "hotjar", "clarity"]
 CAMINHOS_IRRELEVANTES = ["/lobby/", "/chat/", "/video/", "websocketstream"]
-CAMINHOS_PREFERIDOS = ["/bacbo/player/game/", "/player/game/", "evolution"]
+CAMINHOS_PREFERIDOS = ["/bacbo/player/game/", "/player/game/", "evolution", "casinome"]
 
 # ─── Otimização Equilibrada de Memória RAM ────────────────────────────────────
 async def interceptar_e_bloquear_recursos(route):
-    """Bloqueia mídias pesadas, mas deixa carregar scripts estruturais"""
+    """Bloqueia mídias pesadas, mas deixa carregar scripts estruturais essenciais"""
     tipo_recurso = route.request.resource_type
     if tipo_recurso in ["image", "media", "font", "imageset", "beacon"]:
         await route.abort()
@@ -86,17 +86,27 @@ async def fazer_login(page: Page):
         print(f"⚠️ Erro ao preencher login (pode já estar logado): {e}")
 
 async def entrar_na_mesa_direto(page: Page):
-    """Corta o processo de busca e clica direto na URL da mesa"""
+    """Navega direto e força um clique mecânico na área do jogo para carregar o WebSocket"""
     if page.is_closed(): return
     try:
         print(f"🚀 Forçando entrada direta na mesa: {URL_MESA_DIRETA}")
         await page.goto(URL_MESA_DIRETA, timeout=60000, wait_until="commit")
-        await page.wait_for_timeout(5000)
+        await page.wait_for_timeout(6000)
         await fechar_popups(page)
         
-        # Procura por qualquer iframe do jogo e força carregamento interno
-        iframes = await page.locator("iframe").all()
-        print(f"ℹ️ Detectados {len(iframes)} elementos de carregamento de jogo.")
+        # --- Ativação Mecânica do Jogo ---
+        # Procura seletores comuns onde o jogo fica renderizado e força cliques para inicializar o fluxo de rede
+        for seletor in ["iframe", "canvas", ".game-play", ".game-container", "button:has-text('Jogar')"]:
+            try:
+                alvo = page.locator(seletor).first
+                if await alvo.is_visible():
+                    # Clica no meio do elemento para simular o toque do usuário que inicia o jogo ao vivo
+                    await alvo.click(force=True, timeout=3000)
+                    print(f"   ⚡ Interação disparada no elemento: {seletor}")
+                    await page.wait_for_timeout(1000)
+            except Exception:
+                pass
+                
     except Exception as e:
         print(f"⚠️ Erro ao tentar carregar mesa diretamente: {e}")
 
@@ -104,9 +114,8 @@ async def capturar_url(page: Page, corrotina_navegacao) -> str | None:
     urls_capturadas = []
     def ao_abrir_websocket(ws):
         urls_capturadas.append(ws.url)
-        # Se achou um link da Evolution, printa na hora
         if "evolution" in ws.url or "bacbo" in ws.url:
-            print(f"🎯 WebSocket do jogo detectado em tempo real!")
+            print(f"🎯 WebSocket de dados localizado!")
 
     page.on("websocket", ao_abrir_websocket)
     try:
@@ -114,19 +123,18 @@ async def capturar_url(page: Page, corrotina_navegacao) -> str | None:
     except Exception:
         pass
     
-    await page.wait_for_timeout(8000)
+    await page.wait_for_timeout(10000) # Tempo ideal para o WebSocket conectar pós-clique
     try:
         page.remove_listener("websocket", ao_abrir_websocket)
     except Exception:
         pass
 
-    # Filtragem inteligente de URLs válidas
     candidatos = [u for u in urls_capturadas if "wss://" in u and not any(d in u for d in DOMINIOS_IRRELEVANTES)]
     if not candidatos: return None
     
-    # Dá prioridade absoluta para conexões de jogo da Evolution
+    # Busca com alta prioridade links reais de jogabilidade
     for c in candidatos:
-        if "evolution" in c or "player/game" in c:
+        if "evolution" in c or "player/game" in c or "bacbo" in c:
             return c
     return candidatos[-1]
 
@@ -146,13 +154,13 @@ async def monitor(ws_url):
             enviar_telegram("🤖 <b>Bot Bac Bo Conectado e Monitorando a Mesa com sucesso!</b>")
             while True:
                 msg = await ws.recv()
-                # Aqui a estrutura de processamento lê as mensagens de dados
+                # O processamento lê os pacotes da Evolution aqui...
     except Exception as e:
         print(f"🔴 Desconectado do WebSocket: {e}")
         return "DESCONECTOU"
 
 async def main():
-    print("🎲 BAC BO - INICIANDO SISTEMA DE NAVEGAÇÃO DIRETA")
+    print("🎲 BAC BO - INICIANDO SISTEMA COM ATIVAÇÃO INTERATIVA")
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
@@ -178,7 +186,7 @@ async def main():
                     await monitor(url)
                 else:
                     print("⚠️ Não capturou o tráfego de dados nesta tentativa. Reiniciando ciclo...")
-                    await asyncio.sleep(8)
+                    await asyncio.sleep(6)
             except Exception as e:
                 print(f"🔄 Reiniciando por instabilidade: {e}")
                 await asyncio.sleep(5)
