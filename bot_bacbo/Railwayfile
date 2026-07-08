@@ -2,4 +2,4 @@
 providers = ["python"]
 
 [deploy]
-startCmd = "playwright install chromium && python main.py"
+startCmd = "python main.py"
