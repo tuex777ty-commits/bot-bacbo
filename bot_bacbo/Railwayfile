@@ -1,0 +1,5 @@
+[build]
+providers = ["python"]
+
+[deploy]
+startCmd = "playwright install chromium && python main.py"
