@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bac Bo - Bot Otimizado para Baixo Consumo de RAM e Alto Timeout (Railway)
+Bac Bo - Bot Otimizado para Baixo Consumo de RAM, Alto Timeout e Resiliência a Crashes (Railway)
 """
 
 import asyncio
@@ -26,11 +26,12 @@ DOMINIOS_IRRELEVANTES = ["webpush", "engagelab", "push", "analytics", "doublecli
 CAMINHOS_IRRELEVANTES = ["/lobby/", "/chat/", "/video/", "websocketstream"]
 CAMINHOS_PREFERIDOS = ["/bacbo/player/game/", "/player/game/"]
 
-# ─── Otimização Extrema de Memória RAM ────────────────────────────────────────
+# ─── Otimização Equilibrada de Memória RAM ────────────────────────────────────
 async def interceptar_e_bloquear_recursos(route):
-    """Bloqueia imagens, fontes, CSS e mídias para economizar mais de 250MB de RAM"""
+    """Bloqueia mídias pesadas (imagens e vídeos), mas permite scripts cruciais para o jogo não dar crash"""
     tipo_recurso = route.request.resource_type
-    if tipo_recurso in ["image", "media", "font", "stylesheet", "imageset", "beacon"]:
+    # Liberamos 'stylesheet' e 'script' essenciais para evitar o TargetClosedError
+    if tipo_recurso in ["image", "media", "font", "imageset", "beacon"]:
         await route.abort()
     else:
         await route.continue_()
@@ -39,7 +40,10 @@ async def clicar_resiliente(locator, timeout: int = 10000):
     try:
         await locator.click(timeout=timeout)
     except Exception:
-        await locator.click(force=True, timeout=5000)
+        try:
+            await locator.click(force=True, timeout=5000)
+        except Exception:
+            pass
 
 async def clicar_se_existir(locator, timeout_espera: int = 1000, descricao: str = "") -> bool:
     try:
@@ -55,6 +59,7 @@ async def clicar_se_existir(locator, timeout_espera: int = 1000, descricao: str 
 
 async def fechar_popups(page: Page, tentativas: int = 4):
     for _ in range(tentativas):
+        if page.is_closed(): return
         fechou_algo = False
         await page.wait_for_timeout(200)
         try:
@@ -82,18 +87,20 @@ async def fazer_login(page: Page, max_tentativas: int = 3, login: str = None, se
     senha = senha if senha is not None else SENHA
 
     try:
-        # Aumentado para 60 segundos e usando wait_until="commit" para evitar travar no timeout
         print("🌐 Abrindo página de login...")
         await page.goto("https://www.5gbet.com/home/register", timeout=60000, wait_until="commit")
-        await page.wait_for_timeout(5000) # Aguarda estabilizar um pouco pós-commit
+        await page.wait_for_timeout(5000)
     except Exception as e:
         print(f"ℹ️ Avançando página após aviso de carregamento: {e}")
+
+    if page.is_closed(): return
 
     await fechar_popups(page)
     campo_usuario = page.get_by_role("textbox", name="Digite o Número do Celular/E-")
     campo_senha = page.get_by_role("textbox", name="Insira a senha")
 
     for tentativa in range(1, max_tentativas + 1):
+        if page.is_closed(): return
         try:
             aba_login = page.get_by_text("Login", exact=False).first
             if await aba_login.is_visible():
@@ -109,7 +116,7 @@ async def fazer_login(page: Page, max_tentativas: int = 3, login: str = None, se
             else:
                 await clicar_resiliente(page.get_by_role("button", name="Login"), timeout=5000)
 
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(4000)
             if not await campo_usuario.is_visible():
                 print("✅ Login efetuado com sucesso.")
                 break
@@ -118,26 +125,29 @@ async def fazer_login(page: Page, max_tentativas: int = 3, login: str = None, se
     await fechar_popups(page)
 
 async def buscar_evo(page: Page):
+    if page.is_closed(): return
     await clicar_se_existir(page.get_by_text("Pesquisar", exact=False).first)
     campo_busca = page.get_by_role("textbox", name="Insira o conteúdo da pesquisa")
     try:
         await campo_busca.fill("evo")
-        await page.wait_for_timeout(500)
+        await page.wait_for_timeout(1000)
         await clicar_resiliente(page.locator("#app svg").nth(4))
     except Exception:
         pass
 
 async def entrar_no_provedor_evo(page: Page):
+    if page.is_closed(): return
     await clicar_se_existir(page.get_by_role("heading", name="EVO Jogo Ao Vivo"))
     await fechar_popups(page)
 
 async def entrar_na_mesa_bacbo(page: Page):
+    if page.is_closed(): return
     try:
         frame_externo = page.locator('iframe[title="EVO Jogo Ao Vivo"]').content_frame
         frame_meio = frame_externo.locator("iframe").content_frame
         alvo_externo = frame_meio.locator('[id="PorBacBo00000001::top_picks_for_you"]').get_by_text("Bac Bo Ao Vivo")
-        await clicar_resiliente(alvo_externo, timeout=8000)
-        await page.wait_for_timeout(2000)
+        await clicar_resiliente(alvo_externo, timeout=12000)
+        await page.wait_for_timeout(4000)
     except Exception:
         pass
 
@@ -147,6 +157,7 @@ async def entrar_no_ao_vivo(page: Page):
     await entrar_na_mesa_bacbo(page)
 
 async def reentrar_na_mesa(page: Page):
+    if page.is_closed(): return
     try:
         await page.goto(URL_MESA_DIRETA, timeout=60000, wait_until="commit")
     except Exception:
@@ -155,7 +166,7 @@ async def reentrar_na_mesa(page: Page):
     await entrar_no_provedor_evo(page)
     await entrar_na_mesa_bacbo(page)
 
-async def capturar_url(page: Page, corrotina_navegacao, espera_extra=3000) -> str | None:
+async def capturar_url(page: Page, corrotina_navegacao, espera_extra=5000) -> str | None:
     urls_capturadas = []
     def ao_abrir_websocket(ws):
         if "wss://" in ws.url:
@@ -163,10 +174,19 @@ async def capturar_url(page: Page, corrotina_navegacao, espera_extra=3000) -> st
     page.on("websocket", ao_abrir_websocket)
     try:
         await corrotina_navegacao
+    except Exception as e:
+        print(f"ℹ️ Erro na navegação de captura: {e}")
     finally:
-        page.remove_listener("websocket", ao_abrir_websocket)
+        try:
+            page.remove_listener("websocket", ao_abrir_websocket)
+        except Exception:
+            pass
 
-    await page.wait_for_timeout(espera_extra)
+    try:
+        await page.wait_for_timeout(espera_extra)
+    except Exception:
+        return None
+
     candidatos = [u for u in urls_capturadas if not any(d in u for d in DOMINIOS_IRRELEVANTES) and not any(c in u for c in CAMINHOS_IRRELEVANTES)]
     if not candidatos: return None
     preferidos = [u for u in candidatos if any(p in u for p in CAMINHOS_PREFERIDOS)]
@@ -195,14 +215,15 @@ async def monitor(ws_url, banca, placar):
     headers = {"Origin": "https://www.5gbet.com", "User-Agent": "Mozilla/5.0"}
     try:
         async with websockets.connect(ws_url, additional_headers=headers) as ws:
-            print("✅ Conectado ao WebSocket de Dados!")
+            print("✅ Conectado ao WebSocket de Dados com sucesso!")
+            enviar_telegram("🤖 <b>Bot Bac Bo Iniciado e Conectado com sucesso no Railway!</b>")
             while True:
                 msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
     except Exception:
         return "DESCONECTOU"
 
 async def main():
-    print("🎲 BAC BO - INICIANDO COM OTIMIZAÇÃO DE MEMÓRIA RAM E TIMEOUT EXPANDIDO")
+    print("🎲 BAC BO - INICIANDO COM TRATAMENTO DE CRASHES E OTIMIZAÇÕES")
     banca = Banca()
     placar = Placar()
 
@@ -214,31 +235,45 @@ async def main():
                 "--disable-setuid-sandbox", 
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
-                "--single-process",
                 "--no-zygote",
-                "--js-flags='--max-old-space-size=128'"
+                "--js-flags='--max-old-space-size=256'" # Aumentado levemente para dar estabilidade aos scripts
             ]
         )
         context = await browser.new_context()
         page = await context.new_page()
-
         await page.route("**/*", interceptar_e_bloquear_recursos)
 
-        await fazer_login(page)
-        print("🔎 Capturando WebSocket inicial...")
-        url = await capturar_url(page, entrar_no_ao_vivo(page))
-
         while True:
-            if not url:
-                await asyncio.sleep(10)
-                url = await capturar_url(page, reentrar_na_mesa(page))
-                continue
-                
-            monitor_task = asyncio.create_task(monitor(url, banca, placar))
-            timer_task = asyncio.create_task(asyncio.sleep(INTERVALO_RECONEXAO))
+            try:
+                if page.is_closed():
+                    context = await browser.new_context()
+                    page = await context.new_page()
+                    await page.route("**/*", interceptar_e_bloquear_recursos)
+                    await fazer_login(page)
 
-            await asyncio.wait({monitor_task, timer_task}, return_when=asyncio.FIRST_COMPLETED)
-            url = await capturar_url(page, reentrar_na_mesa(page))
+                # Se for a primeira execução ou reinicialização após falha
+                await fazer_login(page)
+                print("🔎 Capturando WebSocket inicial...")
+                url = await capturar_url(page, entrar_no_ao_vivo(page))
+
+                while True:
+                    if not url:
+                        print("⚠️ URL de WebSocket não capturada. Tentando reentrar...")
+                        await asyncio.sleep(10)
+                        if page.is_closed(): break
+                        url = await capturar_url(page, reentrar_na_mesa(page))
+                        continue
+                        
+                    monitor_task = asyncio.create_task(monitor(url, banca, placar))
+                    timer_task = asyncio.create_task(asyncio.sleep(INTERVALO_RECONEXAO))
+
+                    await asyncio.wait({monitor_task, timer_task}, return_when=asyncio.FIRST_COMPLETED)
+                    
+                    if page.is_closed(): break
+                    url = await capturar_url(page, reentrar_na_mesa(page))
+            except Exception as e:
+                print(f"🔄 Ocorreu uma instabilidade geral ({e}). Reiniciando ciclo de navegação...")
+                await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(main())
