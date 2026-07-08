@@ -1,5 +1,0 @@
-[build]
-providers = ["python"]
-
-[deploy]
-startCmd = "python main.py"
