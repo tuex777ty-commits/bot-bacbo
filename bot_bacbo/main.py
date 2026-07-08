@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Bac Bo - Bot com Ativação Física de Iframe e Estabilidade de WebSocket (Railway)
+Bac Bo - Bot com Ignorance de SSL e Estabilidade de WebSocket (Railway)
 """
 
 import asyncio
 import json
 import re
 import os
+import ssl
 import urllib.request
 import urllib.error
 import websockets
@@ -86,7 +87,6 @@ async def fazer_login(page: Page):
         print(f"⚠️ Erro ao preencher login (pode já estar logado): {e}")
 
 async def entrar_na_mesa_direto(page: Page):
-    """Navega direto e força um clique mecânico na área do jogo para carregar o WebSocket"""
     if page.is_closed(): return
     try:
         print(f"🚀 Forçando entrada direta na mesa: {URL_MESA_DIRETA}")
@@ -94,13 +94,10 @@ async def entrar_na_mesa_direto(page: Page):
         await page.wait_for_timeout(6000)
         await fechar_popups(page)
         
-        # --- Ativação Mecânica do Jogo ---
-        # Procura seletores comuns onde o jogo fica renderizado e força cliques para inicializar o fluxo de rede
         for seletor in ["iframe", "canvas", ".game-play", ".game-container", "button:has-text('Jogar')"]:
             try:
                 alvo = page.locator(seletor).first
                 if await alvo.is_visible():
-                    # Clica no meio do elemento para simular o toque do usuário que inicia o jogo ao vivo
                     await alvo.click(force=True, timeout=3000)
                     print(f"   ⚡ Interação disparada no elemento: {seletor}")
                     await page.wait_for_timeout(1000)
@@ -123,7 +120,7 @@ async def capturar_url(page: Page, corrotina_navegacao) -> str | None:
     except Exception:
         pass
     
-    await page.wait_for_timeout(10000) # Tempo ideal para o WebSocket conectar pós-clique
+    await page.wait_for_timeout(10000)
     try:
         page.remove_listener("websocket", ao_abrir_websocket)
     except Exception:
@@ -132,7 +129,6 @@ async def capturar_url(page: Page, corrotina_navegacao) -> str | None:
     candidatos = [u for u in urls_capturadas if "wss://" in u and not any(d in u for d in DOMINIOS_IRRELEVANTES)]
     if not candidatos: return None
     
-    # Busca com alta prioridade links reais de jogabilidade
     for c in candidatos:
         if "evolution" in c or "player/game" in c or "bacbo" in c:
             return c
@@ -148,8 +144,14 @@ def enviar_telegram(msg):
 
 async def monitor(ws_url):
     headers = {"Origin": "https://www.5gbet.com", "User-Agent": "Mozilla/5.0"}
+    
+    # CRUCIAL: Cria um contexto SSL que ignora erros de verificação locais do Linux
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
     try:
-        async with websockets.connect(ws_url, additional_headers=headers) as ws:
+        async with websockets.connect(ws_url, additional_headers=headers, ssl=ssl_context) as ws:
             print("🟢 CONECTADO COM SUCESSO AO WEBSOCKET DA MESA!")
             enviar_telegram("🤖 <b>Bot Bac Bo Conectado e Monitorando a Mesa com sucesso!</b>")
             while True:
@@ -160,7 +162,7 @@ async def monitor(ws_url):
         return "DESCONECTOU"
 
 async def main():
-    print("🎲 BAC BO - INICIANDO SISTEMA COM ATIVAÇÃO INTERATIVA")
+    print("🎲 BAC BO - INICIANDO SISTEMA COM CORREÇÃO DE SSL")
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
