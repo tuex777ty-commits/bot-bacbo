@@ -6,7 +6,7 @@ Bot completo em Python que automatiza a navegação até a mesa de Bac Bo (5gbet
 
 - Faz login e navega automaticamente até a mesa Bac Bo (via [Playwright](https://playwright.dev/))
 - Captura a URL do WebSocket de dados do jogo sem precisar de F12 manual
-- Renova a conexão automaticamente a cada 10 minutos (ou antes, se cair)
+- Renova a conexão automaticamente a cada 20 minutos (ou antes, se cair)
 - Detecta padrões configuráveis no histórico de resultados
 - Aplica estratégia de Gale (até 2 níveis) nas entradas
 - Simula uma banca hipotética com progressão "deixa rolar" (stake cresce a cada vitória)
