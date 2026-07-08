@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bac Bo - Bot Otimizado para Baixo Consumo de RAM (Railway 512MB)
+Bac Bo - Bot Otimizado para Baixo Consumo de RAM e Alto Timeout (Railway)
 """
 
 import asyncio
@@ -82,10 +82,12 @@ async def fazer_login(page: Page, max_tentativas: int = 3, login: str = None, se
     senha = senha if senha is not None else SENHA
 
     try:
-        await page.goto("https://www.5gbet.com/home/register", timeout=20000)
+        # Aumentado para 60 segundos e usando wait_until="commit" para evitar travar no timeout
+        print("🌐 Abrindo página de login...")
+        await page.goto("https://www.5gbet.com/home/register", timeout=60000, wait_until="commit")
+        await page.wait_for_timeout(5000) # Aguarda estabilizar um pouco pós-commit
     except Exception as e:
-        print(f"ℹ️ Avançando página ({e}).")
-        return
+        print(f"ℹ️ Avançando página após aviso de carregamento: {e}")
 
     await fechar_popups(page)
     campo_usuario = page.get_by_role("textbox", name="Digite o Número do Celular/E-")
@@ -146,7 +148,7 @@ async def entrar_no_ao_vivo(page: Page):
 
 async def reentrar_na_mesa(page: Page):
     try:
-        await page.goto(URL_MESA_DIRETA, timeout=20000)
+        await page.goto(URL_MESA_DIRETA, timeout=60000, wait_until="commit")
     except Exception:
         pass
     await fechar_popups(page)
@@ -200,12 +202,11 @@ async def monitor(ws_url, banca, placar):
         return "DESCONECTOU"
 
 async def main():
-    print("🎲 BAC BO - INICIANDO COM OTIMIZAÇÃO DE MEMÓRIA RAM (MAX 512MB)")
+    print("🎲 BAC BO - INICIANDO COM OTIMIZAÇÃO DE MEMÓRIA RAM E TIMEOUT EXPANDIDO")
     banca = Banca()
     placar = Placar()
 
     async with async_playwright() as pw:
-        # Argumentos Chromium focados em economia brutal de recursos
         browser = await pw.chromium.launch(
             headless=True,
             args=[
@@ -221,7 +222,6 @@ async def main():
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Ativa o interceptador de bloqueio de imagens e CSS para poupar RAM
         await page.route("**/*", interceptar_e_bloquear_recursos)
 
         await fazer_login(page)
